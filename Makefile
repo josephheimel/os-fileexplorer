@@ -9,7 +9,7 @@ OBJDIR= obj
 BINDIR= bin
 
 OBJS= $(addprefix $(OBJDIR)/, main.o)
-EXEC= $(addprefix $(BINDIR)/, sdlexample)
+EXEC= $(addprefix $(BINDIR)/, fileexplorer)
 
 # CREATE DIRECTORIES (IF DON'T ALREADY EXIST)
 mkdirs:= $(shell mkdir -p $(OBJDIR) $(BINDIR))
