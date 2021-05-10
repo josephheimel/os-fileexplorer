@@ -2,6 +2,12 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+#include <string>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <vector>
+#include <algorithm>
+
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -21,6 +27,9 @@ typedef struct AppData {
 
 void initialize(SDL_Renderer *renderer, AppData *data_ptr);
 void render(SDL_Renderer *renderer, AppData *data_ptr);
+void listDirectory(std::string dirname, char ***result);
+bool compareNoCase (std::string first, std::string second);
+
 
 int main(int argc, char **argv)
 {
@@ -50,16 +59,6 @@ int main(int argc, char **argv)
         switch (event.type)
         {
         case SDL_MOUSEMOTION:
-            if(data.phrase_selected)
-            {
-                data.phrase_location.x = event.motion.x - data.phrase_offset.x;
-                data.phrase_location.y = event.motion.y - data.phrase_offset.y;
-            } 
-            else if (data.penguin_selected) 
-            {
-                data.penguin_location.x = event.motion.x - data.penguin_offset.x;
-                data.penguin_location.y = event.motion.y - data.penguin_offset.y; 
-            }
             break;
         
         case SDL_MOUSEBUTTONDOWN:
@@ -123,15 +122,24 @@ void initialize(SDL_Renderer *renderer, AppData *data_ptr)
     data_ptr->penguin_location.h = 200;
     data_ptr->penguin_selected = false;
 
+
+    //Get Home Directory files
+    std::string homedir = getenv("HOME");
+    char **files;
+    listDirectory(homedir, &files);
+
     // create text phrase
     SDL_Color phrase_color = { 0, 0, 0 };
-    SDL_Surface *text_surf = TTF_RenderText_Solid(data_ptr->font, "Hello World!", phrase_color);
+    SDL_Surface *text_surf = TTF_RenderText_Solid(data_ptr->font, files[0], phrase_color);
     data_ptr->phrase = SDL_CreateTextureFromSurface(renderer, text_surf);
     SDL_FreeSurface(text_surf);
     data_ptr->phrase_selected = false;
     data_ptr->phrase_location.x = 10;
     data_ptr->phrase_location.y = 500;
     SDL_QueryTexture(data_ptr->phrase, NULL, NULL, &(data_ptr->phrase_location.w), &(data_ptr->phrase_location.h));
+
+
+    
 }
 
 void render(SDL_Renderer *renderer, AppData *data_ptr)
@@ -150,3 +158,56 @@ void render(SDL_Renderer *renderer, AppData *data_ptr)
     SDL_RenderPresent(renderer);
 }
 
+void listDirectory(std::string dirname, char ***result)
+{
+    struct stat info;
+
+    std::vector<std::string> files;
+    
+    int err = stat(dirname.c_str(), &info);
+    if (err == 0 && S_ISDIR(info.st_mode))
+    {
+        DIR* dir = opendir(dirname.c_str());
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {      
+            files.push_back(entry->d_name);
+            if(files.back() == "."){
+                files.pop_back();
+            }
+        }
+        closedir(dir);
+    }
+    else
+    {
+        fprintf(stderr, "Error: directory '%s' not found\n", dirname.c_str());
+    }
+    std::sort(files.begin(), files.end(), compareNoCase);
+
+
+
+    //convert to char array
+    int i;
+    int result_length = files.size() + 1;
+    *result = new char*[result_length];
+    for (i = 0; i < files.size(); i++)
+    {
+        (*result)[i] = new char[files[i].length() + 1];
+        strcpy((*result)[i], files[i].c_str());
+    }
+    (*result)[files.size()] = NULL;
+}
+
+bool compareNoCase (std::string first, std::string second)
+{
+  int i=0;
+  while ((i < first.length()) && (i < second.length()))
+  {
+    if (tolower (first[i]) < tolower (second[i])) return true;
+    else if (tolower (first[i]) > tolower (second[i])) return false;
+    i++;
+  }
+
+  if (first.length() < second.length()) return true;
+  else return false;
+}
