@@ -27,7 +27,6 @@ typedef struct AppData {
     TTF_Font *font;
     //file name
     std::vector<std::string> name;
-    std::vector<std::string> file_path;
     std::vector<SDL_Texture*> name_text;
     std::vector<SDL_Rect> name_coordinates;
     //file icon
@@ -76,11 +75,12 @@ void initialize(SDL_Renderer *renderer, AppData *data_ptr);
 void initializeIcons(SDL_Renderer *renderer, AppData *data_ptr);
 void render(SDL_Renderer *renderer, AppData *data_ptr);
 void getFileData(std::string dirname, AppData *data_ptr);
-std::vector<std::string> listDirectory(std::string dirname, AppData *data_ptr);
+std::vector<std::string> listDirectory(std::string dirname, bool recurse);
 bool compareNoCase (std::string first, std::string second);
 void cleanTextures(AppData *data_ptr);
 void cleanIcons(AppData *data_ptr);
 std::string getPermissions(fs::perms p);
+int slashCount(std::string path);
 
 int main(int argc, char **argv)
 {
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
                 if(moving) {
                     for(int i = 0; i < data.name_coordinates.size(); i++)
                     {
-                        int pos = data.y_origin[i].y - (event.motion.y - motion_root);
+                        int pos = data.y_origin[i].y - (event.motion.y - motion_root)*8;
                         data.name_coordinates[i].y = pos;
                         data.icon_coordinates[i].y = pos;
                         data.permissions_coordinates[i].y = pos;
@@ -197,7 +197,7 @@ int main(int argc, char **argv)
                     //if [i] is a directory
                     if(data.icon_type[i] == 0)
                     {
-                        data.directory += "/" + data.name[i];
+                        data.directory = data.name[i];
                         cleanTextures(&data);
                         initialize(renderer, &data);
                     }
@@ -206,6 +206,8 @@ int main(int argc, char **argv)
                                                                         //CODE FOR OPENING FILES HERE
                         //file type can be determined by its icon type as shown in the above *if* statement
                         //0 is directory, 1 is executable, 2 is image, 3 is video, 4 is code file, and 5 is other
+                        //data.name vector contains file paths
+
                         std::cout << "File is not a directory." << std::endl;
                     }
                 }
@@ -235,6 +237,7 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
 
 void initialize(SDL_Renderer *renderer, AppData *data_ptr)
 {
@@ -281,7 +284,10 @@ void initialize(SDL_Renderer *renderer, AppData *data_ptr)
 
 
     //Get Directory files
-    getFileData(data_ptr->directory, data_ptr);
+    std::string dir = data_ptr->directory;
+    int slash_count = slashCount(dir);
+    getFileData(dir, data_ptr);
+
 
     //y_origin here is not associated with the data field in AppData
     int y_origin = 25;
@@ -305,17 +311,23 @@ void initialize(SDL_Renderer *renderer, AppData *data_ptr)
         data_ptr->permissions_text.push_back(permissions);
         data_ptr->permissions_coordinates.push_back(perm_pos);
 
+        //get file name
+        fs::path fp = data_ptr->name.at(i);
+        std::string name = fp.filename();
 
         //Set text
-        SDL_Surface *text_surf = TTF_RenderText_Solid(data_ptr->font, data_ptr->name.at(i).c_str(), phrase_color);
+        SDL_Surface *text_surf = TTF_RenderText_Solid(data_ptr->font, name.c_str(), phrase_color);
         data_ptr->name_text.at(i) = SDL_CreateTextureFromSurface(renderer, text_surf);
         text_surf = TTF_RenderText_Solid(data_ptr->font, data_ptr->size.at(i).c_str(), phrase_color);
         data_ptr->size_text.at(i) = SDL_CreateTextureFromSurface(renderer, text_surf);
         text_surf = TTF_RenderText_Solid(data_ptr->font, data_ptr->permissions.at(i).c_str(), phrase_color);
         data_ptr->permissions_text.at(i) = SDL_CreateTextureFromSurface(renderer, text_surf);
         SDL_FreeSurface(text_surf);
+        
         //Set Coordinates
-        data_ptr->name_coordinates.at(i).x = 50;
+        int indents = slashCount(data_ptr->name.at(i)) - slash_count - 1;
+
+        data_ptr->name_coordinates.at(i).x = 50 + (25*indents);
         data_ptr->name_coordinates.at(i).y = y_origin;
         SDL_QueryTexture(data_ptr->name_text.at(i), NULL, NULL, &(data_ptr->name_coordinates.at(i).w), &(data_ptr->name_coordinates.at(i).h));
         data_ptr->size_coordinates.at(i).x = size_pos_x;
@@ -352,7 +364,7 @@ void initialize(SDL_Renderer *renderer, AppData *data_ptr)
     if(items < 23) {
         data_ptr->scrollbar = {7,32,11,561};
     } else {
-        int height = (561*23)/(items+4);
+        int height = (561*23)/(items);
         data_ptr->scrollbar = {7,32,11,height};
     }
 }
@@ -420,7 +432,6 @@ void cleanTextures(AppData *data_ptr)
     data_ptr->permissions.clear();
     data_ptr->size.clear();
     data_ptr->y_origin.clear();
-    data_ptr->file_path.clear();
     //coordinate vectors
     data_ptr->icon_coordinates.clear();
     data_ptr->name_coordinates.clear();
@@ -476,14 +487,16 @@ void initializeIcons(SDL_Renderer *renderer, AppData *data_ptr)
 void getFileData(std::string dirname, AppData *data_ptr)
 {
     //set file names
-    data_ptr->name = listDirectory(dirname, data_ptr);
+    data_ptr->name = listDirectory(dirname, data_ptr->recursive_viewing_mode);
+
+    data_ptr->name.insert(data_ptr->name.begin(), dirname + "/..");
 
     //set file types, permissions, and sizes
     for(int i = 0; i < data_ptr->name.size(); i++)
     {
         //file path/name
-        std::string file = data_ptr->name.at(i);
-        fs::path fp = data_ptr->file_path.at(i);       
+        fs::path fp = data_ptr->name.at(i);
+        std::string file = fp.filename();     
 
 
         //permissions
@@ -542,7 +555,7 @@ void getFileData(std::string dirname, AppData *data_ptr)
     }
 }
 
-std::vector<std::string> listDirectory(std::string dirname, AppData *data_ptr)
+std::vector<std::string> listDirectory(std::string dirname, bool recurse)
 {
     struct stat info;
 
@@ -557,7 +570,7 @@ std::vector<std::string> listDirectory(std::string dirname, AppData *data_ptr)
         while ((entry = readdir(dir)) != NULL) {
 
             files.push_back(entry->d_name);
-            if(files.back() == "."){
+            if(files.back() == "." || files.back() == ".."){
                 files.pop_back();
             }
         }
@@ -571,23 +584,25 @@ std::vector<std::string> listDirectory(std::string dirname, AppData *data_ptr)
     //sort
     std::sort(files.begin(), files.end(), compareNoCase);
 
+    //std::cout << files.size() << std::endl;
     for(int i = 0; i < files.size(); i++)
-    {
-        std::string file = files.at(i);
-        data_ptr->file_path.push_back(dirname + "/" + file);
-        fs::path fp = dirname + "/" + file;
-
-        //find subDirectories if recursive viewing is active and it isn't ".." (return directory)
-        if(fs::is_directory(fp) && data_ptr->recursive_viewing_mode && file != ".." && file != ".git")
-        {
-            std::vector<std::string> subDirectory = listDirectory(file, data_ptr);
-            files.insert(files.begin() + i, subDirectory.begin(), subDirectory.end());
-        }
+    { 
+        files.at(i) = dirname + "/" + files.at(i);
     }
 
-    for(int i = 0; i < data_ptr->file_path.size(); i++)
-    {
-        std::cout << data_ptr->file_path.at(i) << std::endl;
+    for(int i = 0; i < files.size(); i++)
+    {        
+        fs::path fp = files.at(i);
+
+        std::string file = fp.filename();
+
+        //find subDirectories if recursive viewing is active
+        if(fs::is_directory(fp) && recurse && file.at(0) != '.')
+        {
+            //std::cout << i << std::endl;
+            std::vector<std::string> subDirectory = listDirectory(files.at(i), false);
+            files.insert(files.begin() + i + 1, subDirectory.begin(), subDirectory.end());
+        }
     }
 
     return files;
@@ -660,4 +675,16 @@ bool compareNoCase (std::string first, std::string second)
 
   if (first.length() < second.length()) return true;
   else return false;
+}
+
+int slashCount(std::string path)
+{
+    char slash = '/';
+    int slash_count = 0;
+
+    for (int i = 0; (i = path.find(slash, i)) != std::string::npos; i++) {
+        slash_count++;
+    }
+
+    return slash_count;
 }
