@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <unistd.h>
 
 
 /*
@@ -208,7 +209,22 @@ int main(int argc, char **argv)
                         //0 is directory, 1 is executable, 2 is image, 3 is video, 4 is code file, and 5 is other
                         //data.name vector contains file paths
 
-                        std::cout << "File is not a directory." << std::endl;
+                        int pid = fork();
+
+                        // child command opens file
+                        if(pid == 0)
+                        {
+                            char *pathstr = new char[data.name[i].length() + 1];
+                            strcpy(pathstr, data.name[i].c_str());
+
+                            char *xdgstr = new char[9];
+                            strcpy(xdgstr, "xdg-open");
+
+                            char *passes[3] = {xdgstr, pathstr, NULL};
+
+                            execvp(xdgstr, passes);
+                        }
+                        // parent continues running file application
                     }
                 }
             }
